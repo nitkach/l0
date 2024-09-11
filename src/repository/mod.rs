@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{error, info};
 use model::{Item, OrderRecord};
 use tokio_postgres::NoTls;
@@ -18,7 +18,8 @@ pub(crate) struct Repository {
 
 impl Repository {
     pub(crate) async fn init() -> Result<Self> {
-        let db_url = std::env::var("DATABASE_URL")?;
+        let db_url = std::env::var("DATABASE_URL")
+            .context("Could not find environment variable DATABASE_URL")?;
         let (client, connection) = tokio_postgres::connect(&db_url, NoTls).await?;
 
         tokio::spawn(async move {
