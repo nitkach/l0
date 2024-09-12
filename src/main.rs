@@ -4,13 +4,15 @@ use std::{panic::AssertUnwindSafe, process::ExitCode};
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    env_logger::init();
+
     let website = AssertUnwindSafe(async {
         let result = l0::run().await;
 
         match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("{err}");
+                eprintln!("{err:?}");
                 ExitCode::FAILURE
             }
         }

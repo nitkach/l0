@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct OrderRecord {
     pub(crate) order_uid: String,
     pub(crate) track_number: String,
@@ -16,7 +18,7 @@ pub(crate) struct OrderRecord {
     pub(crate) oof_shard: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Delivery {
     pub(crate) name: String,
     pub(crate) phone: String,
@@ -27,7 +29,7 @@ pub(crate) struct Delivery {
     pub(crate) email: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Payment {
     pub(crate) transaction: String,
     pub(crate) request_id: String,
@@ -41,7 +43,7 @@ pub(crate) struct Payment {
     pub(crate) custom_fee: i32,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Item {
     pub(crate) chrt_id: i32,
     pub(crate) track_number: String,
@@ -54,60 +56,4 @@ pub(crate) struct Item {
     pub(crate) nm_id: i32,
     pub(crate) brand: String,
     pub(crate) status: i32,
-}
-
-impl From<crate::app::model::Order> for OrderRecord {
-    fn from(value: crate::app::model::Order) -> Self {
-        Self {
-            order_uid: value.order_uid,
-            track_number: value.track_number,
-            entry: value.entry,
-            delivery: Delivery {
-                name: value.delivery.name,
-                phone: value.delivery.phone,
-                zip: value.delivery.zip,
-                city: value.delivery.city,
-                address: value.delivery.address,
-                region: value.delivery.region,
-                email: value.delivery.email,
-            },
-            payment: Payment {
-                transaction: value.payment.transaction,
-                request_id: value.payment.request_id,
-                currency: value.payment.currency,
-                provider: value.payment.provider,
-                amount: value.payment.amount,
-                payment_dt: value.payment.payment_dt,
-                bank: value.payment.bank,
-                delivery_cost: value.payment.delivery_cost,
-                goods_total: value.payment.goods_total,
-                custom_fee: value.payment.custom_fee,
-            },
-            items: value
-                .items
-                .into_iter()
-                .map(|item| Item {
-                    chrt_id: item.chrt_id,
-                    track_number: item.track_number,
-                    price: item.price,
-                    rid: item.rid,
-                    name: item.name,
-                    sale: item.sale,
-                    size: item.size,
-                    total_price: item.total_price,
-                    nm_id: item.nm_id,
-                    brand: item.brand,
-                    status: item.status,
-                })
-                .collect(),
-            locale: value.locale,
-            internal_signature: value.internal_signature,
-            customer_id: value.customer_id,
-            delivery_service: value.delivery_service,
-            shardkey: value.shardkey,
-            sm_id: value.sm_id,
-            date_created: value.date_created,
-            oof_shard: value.oof_shard,
-        }
-    }
 }

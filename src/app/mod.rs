@@ -9,14 +9,14 @@ use axum::{
 };
 use error::AppError;
 use http::StatusCode;
-use log::info;
-use model::Order;
+use log::{error, info};
 
 mod error;
-pub(crate) mod model;
 
 #[debug_handler]
 async fn get_orders_list(State(pool): State<Repository>) -> Result<impl IntoResponse, AppError> {
+    info!("Getting list of all orders");
+
     let list = pool.list().await?;
 
     Ok(Json(list))
@@ -26,7 +26,10 @@ async fn get_order_by_id(
     State(pool): State<Repository>,
     Path(order_uid): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    info!("Getting order with uid: {order_uid}");
+
     let Some(record) = pool.get(&order_uid).await? else {
+        info!("Cannot find order with uid: {order_uid}");
         return Err(AppError::with_status_404(anyhow::anyhow!(
             "Cannot find order with {order_uid} id."
         )));
@@ -38,9 +41,15 @@ async fn get_order_by_id(
 #[debug_handler]
 async fn post_order(
     State(pool): State<Repository>,
-    Json(order): Json<Order>,
+    body: String,
 ) -> Result<impl IntoResponse, AppError> {
-    let order = crate::repository::model::OrderRecord::from(order);
+    let order = match serde_json::from_str(&body) {
+        Ok(string) => string,
+        Err(err) => {
+            error!("Failed to deserialize to JSON");
+            return Err(err.into());
+        }
+    };
 
     pool.add(order).await?;
 

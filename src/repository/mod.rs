@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
-
 use anyhow::{Context, Result};
 use log::{error, info};
+use lru::LruCache;
 use model::{Item, OrderRecord};
+use std::sync::{Arc, Mutex};
 use tokio_postgres::NoTls;
 
 pub(crate) mod model;
@@ -13,7 +10,7 @@ pub(crate) mod model;
 #[derive(Clone)]
 pub(crate) struct Repository {
     client: Arc<tokio_postgres::Client>,
-    cache: Arc<Mutex<HashMap<String, OrderRecord>>>,
+    cache: Arc<Mutex<LruCache<String, OrderRecord>>>,
 }
 
 impl Repository {
@@ -22,15 +19,23 @@ impl Repository {
             .context("Could not find environment variable DATABASE_URL")?;
         let (client, connection) = tokio_postgres::connect(&db_url, NoTls).await?;
 
+        // The connection object performs the actual communication with the database,
+        // so spawn it off to run on its own.
+        // It performs the actual IO with the server, and should generally
+        // be spawned off onto an executor to run in the background.
         tokio::spawn(async move {
             if let Err(err) = connection.await {
                 error!("connection error: {}", err);
             }
         });
 
+        // Least Recently Used cache
+        let cache = LruCache::new(std::num::NonZeroUsize::new(10).unwrap());
+
+        // Arc for shared state - required by axum
         Ok(Self {
             client: Arc::new(client),
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(Mutex::new(cache)),
         })
     }
 
@@ -41,15 +46,13 @@ impl Repository {
             let mut cache_guard = self.cache.lock().unwrap();
 
             // check if the order is in the cache
-            match cache_guard.entry(order.order_uid.clone()) {
-                std::collections::hash_map::Entry::Occupied(_) => {
-                    return Ok(());
-                }
-                std::collections::hash_map::Entry::Vacant(vacant) => {
-                    vacant.insert(order.clone());
-                    info!("Added record to cache");
-                }
-            };
+            if cache_guard
+                .push(order.order_uid.clone(), order.clone())
+                .is_some()
+            {
+                return Ok(());
+            }
+            info!("Added record to cache");
         }
 
         let statement = self
@@ -71,6 +74,7 @@ impl Repository {
             )
             .await?;
 
+        // binding values
         self.client
             .execute(
                 &statement,
@@ -151,15 +155,15 @@ impl Repository {
             let mut cache_guard = self.cache.lock().unwrap();
 
             // check if the order is in the cache
-            match cache_guard.entry(order_uid.to_owned()) {
-                std::collections::hash_map::Entry::Occupied(occupied) => {
+            match cache_guard.pop(order_uid) {
+                Some(order) => {
                     info!("Cache hit!");
-                    return Ok(Some(occupied.get().clone()));
+                    return Ok(Some(order));
                 }
-                std::collections::hash_map::Entry::Vacant(_) => {
+                None => {
                     info!("Cache miss, getting record from database");
                 }
-            };
+            }
         }
 
         let statement = self
