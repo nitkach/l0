@@ -147,6 +147,8 @@ impl Repository {
                 .await?;
         }
 
+        info!("Added record to database");
+
         Ok(())
     }
 
@@ -155,10 +157,10 @@ impl Repository {
             let mut cache_guard = self.cache.lock().unwrap();
 
             // check if the order is in the cache
-            match cache_guard.pop(order_uid) {
+            match cache_guard.get(order_uid) {
                 Some(order) => {
                     info!("Cache hit!");
-                    return Ok(Some(order));
+                    return Ok(Some(order.clone()));
                 }
                 None => {
                     info!("Cache miss, getting record from database");
@@ -356,5 +358,36 @@ impl Repository {
         }
 
         Ok(list)
+    }
+
+    pub(crate) async fn remove(&self, order_uid: &str) -> Result<()> {
+        {
+            let mut cache_guard = self.cache.lock().unwrap();
+
+            // check if the order is in the cache
+            match cache_guard.pop(order_uid) {
+                Some(_) => {
+                    info!("Order removed from cache");
+                }
+                None => {
+                    info!("Order for removing not found in cache");
+                }
+            }
+        }
+
+        let statement = self
+            .client
+            .prepare(
+                "
+            delete from orders where order_uid = $1;
+            ",
+            )
+            .await?;
+
+        let rows_affected = self.client.execute(&statement, &[&order_uid]).await?;
+
+        info!("Removed {rows_affected} rows from database");
+
+        Ok(())
     }
 }

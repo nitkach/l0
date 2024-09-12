@@ -4,7 +4,7 @@ use axum::{
     debug_handler,
     extract::{Path, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use error::AppError;
@@ -56,6 +56,15 @@ async fn post_order(
     Ok(StatusCode::CREATED)
 }
 
+async fn remove_order(
+    State(pool): State<Repository>,
+    Path(order_uid): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    pool.remove(&order_uid).await?;
+
+    Ok(StatusCode::OK)
+}
+
 pub async fn run() -> Result<()> {
     let shared_state = Repository::init().await?;
 
@@ -63,6 +72,7 @@ pub async fn run() -> Result<()> {
         .route("/", get(get_orders_list))
         .route("/:id", get(get_order_by_id))
         .route("/", post(post_order))
+        .route("/:id", delete(remove_order))
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
