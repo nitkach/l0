@@ -1,4 +1,19 @@
 services:
+  web-app:
+    image: web-app
+
+    build: .
+
+    environment:
+      DATABASE_URL: postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}
+
+    ports: [3000:3000]
+
+    depends_on:
+      [postgres]
+    networks:
+      [postgres]
+
   postgres:
     image: postgres:16
 
@@ -6,9 +21,9 @@ services:
       [postgres-volume:/var/lib/postgresql/data]
 
     environment:
-      POSTGRES_DB: l0_data
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: $PG_DB
+      POSTGRES_USER: $PG_USER
+      POSTGRES_PASSWORD: $PG_PASSWORD
 
     networks:
       [postgres]

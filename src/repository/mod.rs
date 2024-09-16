@@ -1,11 +1,9 @@
+use crate::model::{Item, OrderRecord};
 use anyhow::{Context, Result};
 use log::{error, info};
 use lru::LruCache;
-use model::{Item, OrderRecord};
 use std::sync::{Arc, Mutex};
 use tokio_postgres::NoTls;
-
-pub(crate) mod model;
 
 #[derive(Clone)]
 pub(crate) struct Repository {
@@ -191,41 +189,7 @@ impl Repository {
             return Ok(None);
         };
 
-        let record = OrderRecord {
-            order_uid: row.get("order_uid"),
-            track_number: row.get("track_number"),
-            entry: row.get("entry"),
-            delivery: model::Delivery {
-                name: row.get("delivery_name"),
-                phone: row.get("delivery_phone"),
-                zip: row.get("delivery_zip"),
-                city: row.get("delivery_city"),
-                address: row.get("delivery_address"),
-                region: row.get("delivery_region"),
-                email: row.get("delivery_email"),
-            },
-            payment: model::Payment {
-                transaction: row.get("payment_transaction"),
-                request_id: row.get("payment_request_id"),
-                currency: row.get("payment_currency"),
-                provider: row.get("payment_provider"),
-                amount: row.get("payment_amount"),
-                payment_dt: row.get("payment_payment_dt"),
-                bank: row.get("payment_bank"),
-                delivery_cost: row.get("payment_delivery_cost"),
-                goods_total: row.get("payment_goods_total"),
-                custom_fee: row.get("payment_custom_fee"),
-            },
-            items: Vec::new(),
-            locale: row.get("locale"),
-            internal_signature: row.get("internal_signature"),
-            customer_id: row.get("customer_id"),
-            delivery_service: row.get("delivery_service"),
-            shardkey: row.get("shardkey"),
-            sm_id: row.get("sm_id"),
-            date_created: row.get("date_created"),
-            oof_shard: row.get("oof_shard"),
-        };
+        let record: OrderRecord = row.try_into()?;
 
         let statement = self
             .client
@@ -241,24 +205,22 @@ impl Repository {
             .await?;
 
         let items_rows = self.client.query(&statement, &[&order_uid]).await?;
+
         let items = items_rows
             .into_iter()
-            .map(|item_row| Item {
-                chrt_id: item_row.get("chrt_id"),
-                track_number: item_row.get("track_number"),
-                price: item_row.get("price"),
-                rid: item_row.get("rid"),
-                name: item_row.get("name"),
-                sale: item_row.get("sale"),
-                size: item_row.get("size"),
-                total_price: item_row.get("total_price"),
-                nm_id: item_row.get("nm_id"),
-                brand: item_row.get("brand"),
-                status: item_row.get("status"),
-            })
-            .collect::<Vec<_>>();
+            .map(Item::try_from)
+            .collect::<Result<Vec<_>>>()?;
 
-        Ok(Some(OrderRecord { items, ..record }))
+        let order_record = OrderRecord { items, ..record };
+
+        // put order in cache
+        {
+            let mut cache_guard = self.cache.lock().unwrap();
+
+            cache_guard.put(order_uid.to_owned(), order_record.clone());
+        }
+
+        Ok(Some(order_record))
     }
 
     pub(crate) async fn list(&self) -> Result<Vec<OrderRecord>> {
@@ -284,42 +246,8 @@ impl Repository {
 
         let orders = orders_rows
             .into_iter()
-            .map(|row| OrderRecord {
-                order_uid: row.get("order_uid"),
-                track_number: row.get("track_number"),
-                entry: row.get("entry"),
-                delivery: model::Delivery {
-                    name: row.get("delivery_name"),
-                    phone: row.get("delivery_phone"),
-                    zip: row.get("delivery_zip"),
-                    city: row.get("delivery_city"),
-                    address: row.get("delivery_address"),
-                    region: row.get("delivery_region"),
-                    email: row.get("delivery_email"),
-                },
-                payment: model::Payment {
-                    transaction: row.get("payment_transaction"),
-                    request_id: row.get("payment_request_id"),
-                    currency: row.get("payment_currency"),
-                    provider: row.get("payment_provider"),
-                    amount: row.get("payment_amount"),
-                    payment_dt: row.get("payment_payment_dt"),
-                    bank: row.get("payment_bank"),
-                    delivery_cost: row.get("payment_delivery_cost"),
-                    goods_total: row.get("payment_goods_total"),
-                    custom_fee: row.get("payment_custom_fee"),
-                },
-                items: Vec::new(),
-                locale: row.get("locale"),
-                internal_signature: row.get("internal_signature"),
-                customer_id: row.get("customer_id"),
-                delivery_service: row.get("delivery_service"),
-                shardkey: row.get("shardkey"),
-                sm_id: row.get("sm_id"),
-                date_created: row.get("date_created"),
-                oof_shard: row.get("oof_shard"),
-            })
-            .collect::<Vec<OrderRecord>>();
+            .map(OrderRecord::try_from)
+            .collect::<Result<Vec<_>>>()?;
 
         let mut list = Vec::new();
         for order in orders {
@@ -327,32 +255,20 @@ impl Repository {
                 .client
                 .prepare(
                     "
-                select
-                    chrt_id, track_number, price, rid, name, sale, size,
-                    total_price, nm_id, brand, status
-                from orders_items
-                where order_uid = $1;
-                ",
+                    select
+                        chrt_id, track_number, price, rid, name, sale, size,
+                        total_price, nm_id, brand, status
+                    from orders_items
+                    where order_uid = $1;
+                    ",
                 )
                 .await?;
 
             let items_rows = self.client.query(&statement, &[&order.order_uid]).await?;
             let items = items_rows
                 .into_iter()
-                .map(|item_row| Item {
-                    chrt_id: item_row.get("chrt_id"),
-                    track_number: item_row.get("track_number"),
-                    price: item_row.get("price"),
-                    rid: item_row.get("rid"),
-                    name: item_row.get("name"),
-                    sale: item_row.get("sale"),
-                    size: item_row.get("size"),
-                    total_price: item_row.get("total_price"),
-                    nm_id: item_row.get("nm_id"),
-                    brand: item_row.get("brand"),
-                    status: item_row.get("status"),
-                })
-                .collect::<Vec<_>>();
+                .map(Item::try_from)
+                .collect::<Result<Vec<_>>>()?;
 
             list.push(OrderRecord { items, ..order });
         }
@@ -379,8 +295,8 @@ impl Repository {
             .client
             .prepare(
                 "
-            delete from orders where order_uid = $1;
-            ",
+                delete from orders where order_uid = $1;
+                ",
             )
             .await?;
 

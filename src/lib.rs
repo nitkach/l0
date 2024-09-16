@@ -2,6 +2,7 @@ use anyhow::Result;
 use log::warn;
 
 mod app;
+mod model;
 mod repository;
 
 pub async fn run() -> Result<()> {
